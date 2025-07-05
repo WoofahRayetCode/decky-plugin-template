@@ -1,7 +1,7 @@
 {
-  "name": "decky-plugin-template",
-  "version": "0.0.1",
-  "description": "A template to quickly create decky plugins from scratch, based on TypeScript and webpack",
+  "name": "ttl-changer-plugin",
+  "version": "1.0.0",
+  "description": "A Steam Deck plugin that changes the system TTL (Time To Live) to 65 for network compatibility",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
@@ -15,11 +15,13 @@
   "keywords": [
     "decky",
     "plugin",
-    "plugin-template",
     "steam-deck",
-    "deck"
+    "deck",
+    "ttl",
+    "network",
+    "time-to-live"
   ],
-  "author": "You <you@you.tld>",
+  "author": "TTL Plugin Developer",
   "license": "BSD-3-Clause",
   "bugs": {
     "url": "https://github.com/SteamDeckHomebrew/decky-plugin-template/issues"

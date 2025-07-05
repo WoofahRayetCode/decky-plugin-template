@@ -138,5 +138,25 @@
             "command": "ssh ${config:deckuser}@${config:deckip} -p ${config:deckport} ${config:deckkey} 'echo '${config:deckpass}' | sudo -S chmod -R ug+rw ${config:deckdir}/homebrew/plugins/'",
             "problemMatcher": []
         },
+        // TTL Plugin specific tasks
+        {
+            "label": "Build TTL Plugin",
+            "type": "shell",
+            "command": "pnpm",
+            "args": ["run", "build"],
+            "group": "build",
+            "problemMatcher": ["$tsc"],
+            "isBackground": false
+        },
+        {
+            "label": "Watch TTL Plugin",
+            "type": "shell",
+            "command": "pnpm",
+            "args": ["run", "watch"],
+            "group": "build",
+            "problemMatcher": ["$tsc"],
+            "isBackground": true,
+            "detail": "Watch for changes and rebuild automatically"
+        },
     ]
 }
