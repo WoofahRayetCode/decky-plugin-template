@@ -1,6 +1,7 @@
 import os
 import subprocess
 import asyncio
+from typing import Dict, Optional, Union
 
 # The decky plugin module is located at decky-loader/plugin
 # For easy intellisense checkout the decky-loader code repo
@@ -24,9 +25,15 @@ class Plugin:
     # Set TTL to specified value (requires root access)
     async def set_ttl(self, ttl_value: int) -> bool:
         try:
-            # Set TTL using echo command (requires root privileges)
-            result = subprocess.run(['sudo', 'bash', '-c', f'echo {ttl_value} > /proc/sys/net/ipv4/ip_default_ttl'], 
-                                  capture_output=True, text=True, check=True)
+            # Validate TTL value (Steam Deck appropriate range)
+            if ttl_value < 32 or ttl_value > 128:
+                decky.logger.error(f"Invalid TTL value: {ttl_value}. Must be between 32 and 128 for Steam Deck")
+                return False
+            
+            # Use direct write to avoid shell injection risks
+            ttl_path = '/proc/sys/net/ipv4/ip_default_ttl'
+            with open(ttl_path, 'w') as f:
+                f.write(str(ttl_value))
             
             # Verify the change was applied
             new_ttl = await self.get_current_ttl()
@@ -36,6 +43,9 @@ class Plugin:
             else:
                 decky.logger.error(f"Failed to set TTL. Expected {ttl_value}, got {new_ttl}")
                 return False
+        except PermissionError:
+            decky.logger.error("Permission denied: Plugin requires root privileges")
+            return False
         except Exception as e:
             decky.logger.error(f"Error setting TTL: {e}")
             return False
@@ -56,33 +66,70 @@ class Plugin:
     # Make TTL change persistent across reboots
     async def make_ttl_persistent(self, ttl_value: int) -> bool:
         try:
-            # Add TTL setting to sysctl.conf for persistence
-            sysctl_line = f"net.ipv4.ip_default_ttl = {ttl_value}\n"
+            # Validate TTL value for Steam Deck
+            if ttl_value < 32 or ttl_value > 128:
+                decky.logger.error(f"Invalid TTL value for persistence: {ttl_value}")
+                return False
             
-            # Check if the setting already exists
+            sysctl_conf_path = '/etc/sysctl.conf'
+            sysctl_line = f"net.ipv4.ip_default_ttl = {ttl_value}"
+            
+            # Read existing content
             try:
-                with open('/etc/sysctl.conf', 'r') as f:
-                    content = f.read()
-                    if 'net.ipv4.ip_default_ttl' in content:
-                        # Remove existing line
-                        lines = content.split('\n')
-                        lines = [line for line in lines if not line.strip().startswith('net.ipv4.ip_default_ttl')]
-                        content = '\n'.join(lines)
-            except:
-                content = ""
+                with open(sysctl_conf_path, 'r') as f:
+                    lines = f.readlines()
+            except FileNotFoundError:
+                lines = []
             
-            # Add our setting
-            content += sysctl_line
+            # Remove any existing TTL configuration
+            filtered_lines = [line for line in lines 
+                            if not line.strip().startswith('net.ipv4.ip_default_ttl')]
             
-            # Write back to file (requires root)
-            result = subprocess.run(['sudo', 'bash', '-c', f'echo "{content}" > /etc/sysctl.conf'], 
-                                  capture_output=True, text=True, check=True)
+            # Add new TTL configuration with Steam Deck comment
+            filtered_lines.append(f"# Steam Deck TTL setting for mobile hotspot compatibility\n")
+            filtered_lines.append(f"{sysctl_line}\n")
             
-            decky.logger.info(f"Made TTL {ttl_value} persistent across reboots")
+            # Write back to file
+            with open(sysctl_conf_path, 'w') as f:
+                f.writelines(filtered_lines)
+            
+            # Apply the setting immediately
+            subprocess.run(['sysctl', '-p'], check=True, capture_output=True)
+            
+            decky.logger.info(f"Made TTL {ttl_value} persistent across reboots for Steam Deck")
             return True
+        except PermissionError:
+            decky.logger.error("Permission denied: Cannot modify sysctl.conf")
+            return False
+        except subprocess.CalledProcessError as e:
+            decky.logger.error(f"Failed to apply sysctl settings: {e}")
+            return False
         except Exception as e:
             decky.logger.error(f"Error making TTL persistent: {e}")
             return False
+
+    # Check if TTL persistence is configured and get the persistent value
+    async def get_persistent_ttl(self) -> dict[str, Union[bool, int, None]]:
+        try:
+            sysctl_conf_path = '/etc/sysctl.conf'
+            with open(sysctl_conf_path, 'r') as f:
+                lines = f.readlines()
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('net.ipv4.ip_default_ttl'):
+                    # Extract TTL value from the line
+                    parts = line.split('=')
+                    if len(parts) == 2:
+                        persistent_ttl = int(parts[1].strip())
+                        return {"is_persistent": True, "ttl_value": persistent_ttl}
+            
+            return {"is_persistent": False, "ttl_value": None}
+        except FileNotFoundError:
+            return {"is_persistent": False, "ttl_value": None}
+        except Exception as e:
+            decky.logger.error(f"Error checking TTL persistence: {e}")
+            return {"is_persistent": False, "ttl_value": None}
 
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
     async def _main(self):
@@ -112,3 +159,7 @@ class Plugin:
         decky.migrate_runtime(
             os.path.join(decky.DECKY_HOME, "template"),
             os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
+    
+    # Set TTL to custom value (exposed for frontend)
+    async def set_ttl_custom(self, ttl_value: int) -> bool:
+        return await self.set_ttl(ttl_value)
