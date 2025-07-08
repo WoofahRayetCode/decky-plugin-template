@@ -4,8 +4,8 @@
   "flags": ["debug", "_root"],
   "api_version": 1,
   "publish": {
-    "tags": ["network", "ttl", "system"],
-    "description": "Change system TTL (Time To Live) to 65 for network compatibility.",
+    "tags": ["network", "ttl", "system", "steam-deck"],
+    "description": "Advanced TTL (Time To Live) management plugin for Steam Deck. Set custom TTL values, enable persistence across reboots, and monitor network configuration status.",
     "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
   }
 }
