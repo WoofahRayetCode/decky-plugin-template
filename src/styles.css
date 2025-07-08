@@ -1,0 +1,31 @@
+.ttl-status {
+  font-weight: bold;
+  font-size: 18px;
+  transition: color 0.3s ease;
+}
+
+.ttl-status.ttl-65 {
+  color: #00ff00; /* Green for TTL 65 */
+}
+
+.ttl-status.ttl-64 {
+  color: #ffff00; /* Yellow for TTL 64 */
+}
+
+.ttl-status.ttl-error {
+  color: #ff0000; /* Red for error or unknown */
+}
+
+.ttl-status.ttl-loading {
+  color: #808080; /* Gray for loading */
+}
+
+.persistence-info {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.custom-ttl-input {
+  margin-bottom: 8px;
+}
