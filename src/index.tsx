@@ -4,7 +4,8 @@ import {
   PanelSectionRow,
   staticClasses,
   ToggleField,
-  Field
+  Field,
+  TextField
 } from "@decky/ui";
 import {
   callable,
@@ -13,33 +14,49 @@ import {
 } from "@decky/api"
 import { useState, useEffect } from "react";
 import { FaNetworkWired } from "react-icons/fa";
+import "./styles.css";
 
 // Python backend function calls
 const getCurrentTtl = callable<[], number>("get_current_ttl");
 const setTtlTo65 = callable<[], boolean>("set_ttl_to_65");
 const resetTtlToDefault = callable<[], boolean>("reset_ttl_to_default");
 const makeTtlPersistent = callable<[ttl_value: number], boolean>("make_ttl_persistent");
+const getPersistentTtl = callable<[], {is_persistent: boolean, ttl_value: number | null}>("get_persistent_ttl");
+const setTtlCustom = callable<[ttl_value: number], boolean>("set_ttl_custom");
 
 function Content() {
   const [currentTtl, setCurrentTtl] = useState<number>(-1);
   const [isChanging, setIsChanging] = useState<boolean>(false);
   const [isPersistent, setIsPersistent] = useState<boolean>(false);
+  const [persistentTtlValue, setPersistentTtlValue] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [customTtlValue, setCustomTtlValue] = useState<string>("65");
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
-  // Load current TTL on component mount
+  // Load current TTL and persistence status on component mount
   useEffect(() => {
-    loadCurrentTtl();
+    loadTtlStatus();
   }, []);
 
-  const loadCurrentTtl = async () => {
+  const loadTtlStatus = async () => {
+    setIsLoading(true);
     try {
-      const ttl = await getCurrentTtl();
+      const [ttl, persistenceInfo] = await Promise.all([
+        getCurrentTtl(),
+        getPersistentTtl()
+      ]);
+      
       setCurrentTtl(ttl);
+      setIsPersistent(persistenceInfo.is_persistent);
+      setPersistentTtlValue(persistenceInfo.ttl_value);
     } catch (error) {
-      console.error("Failed to get current TTL:", error);
+      console.error("Failed to load TTL status:", error);
       toaster.toast({
         title: "Error",
-        body: "Failed to get current TTL value"
+        body: "Failed to load TTL status"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -99,10 +116,11 @@ function Content() {
 
   const handlePersistentToggle = async (enabled: boolean) => {
     try {
-      const ttlValue = enabled ? 65 : 64;
+      const ttlValue = enabled ? currentTtl : 64;
       const success = await makeTtlPersistent(ttlValue);
       if (success) {
         setIsPersistent(enabled);
+        setPersistentTtlValue(enabled ? ttlValue : null);
         toaster.toast({
           title: "Success",
           body: `TTL persistence ${enabled ? 'enabled' : 'disabled'} successfully!`
@@ -122,10 +140,63 @@ function Content() {
     }
   };
 
-  const getTtlStatusColor = () => {
-    if (currentTtl === 65) return "#00ff00"; // Green
-    if (currentTtl === 64) return "#ffff00"; // Yellow
-    return "#ff0000"; // Red for error or unknown
+  const handleSetCustomTtl = async () => {
+    const ttlValue = parseInt(customTtlValue);
+    // Restrict to common Steam Deck values for simplicity
+    if (isNaN(ttlValue) || ttlValue < 32 || ttlValue > 128) {
+      toaster.toast({
+        title: "Error",
+        body: "TTL must be between 32 and 128 for Steam Deck compatibility"
+      });
+      return;
+    }
+
+    setIsChanging(true);
+    try {
+      const success = await setTtlCustom(ttlValue);
+      if (success) {
+        setCurrentTtl(ttlValue);
+        toaster.toast({
+          title: "Success",
+          body: `TTL changed to ${ttlValue} successfully!`
+        });
+      } else {
+        toaster.toast({
+          title: "Error",
+          body: `Failed to change TTL to ${ttlValue}`
+        });
+      }
+    } catch (error) {
+      console.error("Failed to set custom TTL:", error);
+      toaster.toast({
+        title: "Error",
+        body: `Failed to change TTL to ${ttlValue}`
+      });
+    } finally {
+      setIsChanging(false);
+    }
+  };
+
+  const getTtlStatusClass = () => {
+    if (isLoading) return "ttl-status ttl-loading";
+    if (currentTtl === 65) return "ttl-status ttl-65";
+    if (currentTtl === 64) return "ttl-status ttl-64";
+    return "ttl-status ttl-error";
+  };
+
+  const getTtlDisplayValue = () => {
+    if (isLoading) return "Loading...";
+    if (currentTtl === -1) return "Error";
+    return currentTtl.toString();
+  };
+
+  const getPersistenceInfo = () => {
+    if (!isPersistent) return null;
+    return (
+      <div className="persistence-info">
+        Persistent: {persistentTtlValue || "Unknown"}
+      </div>
+    );
   };
 
   return (
@@ -135,23 +206,20 @@ function Content() {
           label="Current TTL"
           description="Current system Time To Live value"
         >
-          <div style={{ 
-            color: getTtlStatusColor(), 
-            fontWeight: "bold", 
-            fontSize: "18px" 
-          }}>
-            {currentTtl === -1 ? "Loading..." : currentTtl}
+          <div className={getTtlStatusClass()}>
+            {getTtlDisplayValue()}
           </div>
+          {getPersistenceInfo()}
         </Field>
       </PanelSectionRow>
 
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={loadCurrentTtl}
+          onClick={loadTtlStatus}
           disabled={isChanging}
         >
-          Refresh TTL
+          {isChanging ? "Refreshing..." : "Refresh Status"}
         </ButtonItem>
       </PanelSectionRow>
 
@@ -186,9 +254,46 @@ function Content() {
       </PanelSectionRow>
 
       <PanelSectionRow>
+        <ToggleField
+          label="Advanced Mode"
+          description="Show custom TTL options"
+          checked={showAdvanced}
+          onChange={setShowAdvanced}
+          disabled={isChanging}
+        />
+      </PanelSectionRow>
+
+      {showAdvanced && (
+        <>
+          <PanelSectionRow>
+            <Field
+              label="Custom TTL"
+              description="Set a custom TTL value (32-128)"
+            >
+              <TextField
+                value={customTtlValue}
+                onChange={(e) => setCustomTtlValue(e.target.value)}
+                disabled={isChanging}
+              />
+            </Field>
+          </PanelSectionRow>
+
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleSetCustomTtl}
+              disabled={isChanging}
+            >
+              {isChanging ? "Setting..." : "Set Custom TTL"}
+            </ButtonItem>
+          </PanelSectionRow>
+        </>
+      )}
+
+      <PanelSectionRow>
         <Field
           label="About TTL"
-          description="TTL (Time To Live) determines how many hops a packet can make before being discarded. Some networks require TTL=65 for proper connectivity."
+          description="TTL 65 is commonly needed for mobile hotspot tethering on Steam Deck. Default system TTL is 64."
         />
       </PanelSectionRow>
     </PanelSection>
